@@ -40,14 +40,37 @@ router.get("/me", auth, async (req: any, res) => {
 
 router.patch("/me", auth, async (req: any, res) => {
   const { name, trustedContact } = req.body;
+
   const update: any = {};
-  if (typeof name === "string" && name.trim().length >= 2) update.name = name.trim();
-  if (trustedContact) update.trustedContact = {
-    name: String(trustedContact.name || "").trim(),
-    phone: String(trustedContact.phone || "").trim()
-  };
-  const user = await User.findByIdAndUpdate(req.user._id, update, { new: true }).select("-passwordHash");
-  res.json({ id: user.id, name: user.name, email: user.email, role: user.role, trustedContact: user.trustedContact || {} });
+
+  if (typeof name === "string" && name.trim().length >= 2) {
+    update.name = name.trim();
+  }
+
+  if (trustedContact) {
+    update.trustedContact = {
+      name: String(trustedContact.name || "").trim(),
+      phone: String(trustedContact.phone || "").trim()
+    };
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    update,
+    { new: true }
+  ).select("-passwordHash");
+
+  if (!user) {
+    return res.status(404).json({ message: "User not found" });
+  }
+
+  res.json({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    trustedContact: user.trustedContact || {}
+  });
 });
 
 export default router;
