@@ -1,14 +1,8 @@
 import axios from "axios";
 import { useAuth } from "./store";
 
-const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
-
-const baseURL = configuredBaseUrl.endsWith("/api")
-  ? configuredBaseUrl
-  : `${configuredBaseUrl.replace(/\/+$/, "")}/api`;
-
 export const api = axios.create({
-  baseURL,
+  baseURL: "https://tourism-guardian-backend.onrender.com/api",
 });
 
 api.interceptors.request.use(config => {
