@@ -160,14 +160,6 @@ export async function nearbySearch(
   return { places: [] };
 }
 
-  // Final fallback to the existing search system.
-  return placeSearch(
-    `${text} near ${lat},${lng}`,
-    lat,
-    lng
-  );
-}
-
 // ============================================================
 // TOURIST ATTRACTIONS - OPENTRIPMAP
 // ============================================================
