@@ -17,6 +17,7 @@ export function createApp() {
   app.use(cors({
   origin: [
     "https://tourism-guardian.vercel.app",
+    "https://tourism-guardian-9nf8gp580-dynadebugers.vercel.app",
     "https://tourism-guardian-814m2r4ds-dynadebugers.vercel.app"
   ],
   credentials: true
