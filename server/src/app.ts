@@ -14,16 +14,18 @@ import plannerRoutes from "./routes/planner.js";
 export function createApp() {
   const app = express();
   app.use(helmet());
-  const allowedOrigins = [
-  "https://tourism-guardian-git-main-dynadebugers.vercel.app",
-  "https://tourism-guardian.vercel.app",
-  "https://tourism-guardian-9nf8gp580-dynadebugers.vercel.app",
-  "https://tourism-guardian-814m2r4ds-dynadebugers.vercel.app",
-  "https://tourism-guardian-dj1a3lhti-dynadebugers.vercel.app",
-];
-
-app.use(cors({
-  origin: allowedOrigins,
+  app.use(cors({
+  origin: (origin, callback) => {
+    if (
+      !origin ||
+      origin === "https://tourism-guardian.vercel.app" ||
+      /^https:\/\/tourism-guardian-[a-z0-9]+-dynadebugers\.vercel\.app$/.test(origin)
+    ) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked: ${origin}`));
+    }
+  },
   credentials: true,
 }));
   app.use(express.json({ limit: "1mb" }));
