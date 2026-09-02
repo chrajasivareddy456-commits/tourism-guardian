@@ -105,16 +105,72 @@ export async function nearbySearch(
   lat: number,
   lng: number
 ) {
-  const label: Record<string, string> = {
-    police: "police station",
-    train_station: "railway station",
-    bus_station: "bus station",
-    hospital: "hospital",
-    hotel: "hotel",
-    tourist: "tourist attraction"
+  const queries: Record<string, string[]> = {
+    police: [
+      "police",
+      "police station",
+      "police department"
+    ],
+    hospital: [
+      "hospital",
+      "medical hospital"
+    ],
+    hotel: [
+      "hotel",
+      "hotels"
+    ],
+    train_station: [
+      "railway station",
+      "train station"
+    ],
+    bus_station: [
+      "bus station",
+      "bus terminal"
+    ],
+    tourist: [
+      "tourist attraction",
+      "tourist places",
+      "attractions"
+    ]
   };
-  const query = label[text] || text;
-  return placeSearch(`${query} near ${lat},${lng}`, lat, lng);
+
+  const searchQueries = queries[text] || [text];
+
+  const allPlaces: any[] = [];
+  const seen = new Set<string>();
+
+  for (const query of searchQueries) {
+    try {
+      const result = await placeSearch(
+        `${query} near ${lat},${lng}`,
+        lat,
+        lng
+      );
+
+      for (const place of result?.places || []) {
+        const id =
+          place.id ||
+          `${place.location?.latitude}-${place.location?.longitude}-${place.displayName?.text}`;
+
+        if (!seen.has(id)) {
+          seen.add(id);
+          allPlaces.push(place);
+        }
+      }
+
+      // Once we have enough results, stop making requests.
+      if (allPlaces.length >= 20) break;
+    } catch (error) {
+      console.error(
+        `[nearbySearch] "${query}" failed:`,
+        error
+      );
+    }
+  }
+
+  return {
+    places: allPlaces.slice(0, 20)
+  };
 }
 
 // ============================================================
