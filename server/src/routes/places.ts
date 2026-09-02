@@ -276,51 +276,112 @@ router.get("/hotels", async (req, res) => {
 
 router.get("/destination-attractions", async (req, res) => {
   try {
-    const lat = Number(req.query.lat), lng = Number(req.query.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ message: "lat and lng are required" });
-    if (process.env.OPENTRIPMAP_API_KEY) {
-      const result = await touristAttractionsSearch(lat, lng);
-      if (result.places?.length) return res.json(result);
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({
+        message: "lat and lng are required"
+      });
     }
-    res.json(await nearbySearch("tourist attractions", lat, lng));
-  } catch (e: any) { res.status(502).json({ message: "Destination attractions unavailable", detail: e.message }); }
-});
 
-async function nominatimRouteSearch(valid: Coord[], type: "fuel" | "ev_charging") {
-  const lngs = valid.map((p) => p[0]), lats = valid.map((p) => p[1]);
-  const bbox = {
-    south: Math.max(-90, Math.min(...lats) - 0.08), north: Math.min(90, Math.max(...lats) + 0.08),
-    west: Math.max(-180, Math.min(...lngs) - 0.08), east: Math.min(180, Math.max(...lngs) + 0.08)
-  };
-  const q = type === "fuel" ? "petrol station" : "EV charging station";
-  // bounded:1 keeps results inside the route's own bounding box instead
-  // of letting Nominatim rank by global "importance" (which fuel/EV
-  // points almost never have, so bounded:0 effectively returned nothing
-  // useful once the route-distance filter discarded far-away matches).
-  const params = new URLSearchParams({ q, format: "json", addressdetails: "1", limit: "50", countrycodes: "in", viewbox: `${bbox.west},${bbox.north},${bbox.east},${bbox.south}`, bounded: "1" });
-  let response;
-  try {
-    response = await fetchWithTimeout(`https://nominatim.openstreetmap.org/search?${params.toString()}`, { headers: { "User-Agent": "TourismGuardian/1.0" } }, 15000);
+    // Try OpenTripMap first, but NEVER allow it to break the endpoint.
+    if (process.env.OPENTRIPMAP_API_KEY) {
+      try {
+        const result = await touristAttractionsSearch(lat, lng);
+
+        if (result?.places?.length) {
+          return res.json(result);
+        }
+      } catch (error) {
+        console.error(
+          "[destination-attractions] OpenTripMap failed, falling back to Google:",
+          error
+        );
+      }
+    }
+
+    // Reliable Google Places fallback
+    const result = await nearbySearch(
+      "tourist",
+      lat,
+      lng
+    );
+
+    return res.json(result);
+
   } catch (e: any) {
-    console.error(`[places] Nominatim request failed: ${e?.message || e}`);
-    return [];
-  }
-  if (!response.ok) { console.error(`[places] Nominatim error ${response.status}`); return []; }
-  const data: any[] = await response.json();
-  return data.map((place: any) => {
-    const lat = Number(place.lat), lng = Number(place.lon), point = { lat, lng };
-    return {
-      id: `nominatim-${type}-${place.place_id}`,
-      displayName: { text: place.display_name?.split(",")[0] || (type === "fuel" ? "Fuel station" : "EV charging station") },
-      formattedAddress: place.display_name || "",
-      location: { latitude: lat, longitude: lng },
-      category: type,
-      _routeDistanceKm: routeDistanceKm(point, valid),
-      _distanceAlongRouteKm: distanceAlongRouteKm(point, valid)
-    };
-  }).filter((p: any) => Number.isFinite(p._routeDistanceKm));
-}
+    console.error(
+      "[destination-attractions] Google search failed:",
+      e
+    );
 
+    return res.status(502).json({
+      message: "Destination attractions unavailable",
+      detail: e?.message || "Unknown error"
+    });
+  }
+});
+async function nominatimRouteSearch(
+  valid: Coord[],
+  type: "fuel" | "ev_charging"
+) {
+  const lngs = valid.map((p) => p[0]);
+  const lats = valid.map((p) => p[1]);
+
+  if (!valid.length) return [];
+
+  const bbox = {
+    south: Math.max(-90, Math.min(...lats) - 0.08),
+    north: Math.min(90, Math.max(...lats) + 0.08),
+    west: Math.max(-180, Math.min(...lngs) - 0.08),
+    east: Math.min(180, Math.max(...lngs) + 0.08)
+  };
+
+  const query =
+    type === "fuel"
+      ? "amenity=fuel"
+      : "amenity=charging_station";
+
+  const url =
+    `https://nominatim.openstreetmap.org/search?format=jsonv2` +
+    `&q=${encodeURIComponent(
+      type === "fuel" ? "fuel station" : "electric vehicle charging station"
+    )}` +
+    `&viewbox=${bbox.west},${bbox.north},${bbox.east},${bbox.south}` +
+    `&bounded=1&limit=40`;
+
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "TourismGuardian/1.0"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Nominatim returned ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  return data.map((item: any) => {
+    const latitude = Number(item.lat);
+    const longitude = Number(item.lon);
+
+    return {
+      id: `nominatim-${item.place_id}`,
+      displayName: {
+        text: item.display_name?.split(",")[0] || "Unknown place"
+      },
+      formattedAddress: item.display_name || "",
+      location: {
+        latitude,
+        longitude
+      },
+      _routeDistanceKm: 0,
+      _distanceAlongRouteKm: 0
+    };
+  });
+}
 async function stationsAlongRoute(valid: Coord[], type: StationType) {
   const [osm, overpass] = await Promise.allSettled([nominatimRouteSearch(valid, type), overpassRouteSearch(valid, type)]);
   if (overpass.status === "rejected") console.error(`[places] Overpass ${type} search failed: ${overpass.reason?.message || overpass.reason}`);
