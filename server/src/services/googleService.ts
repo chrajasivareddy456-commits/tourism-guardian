@@ -18,7 +18,8 @@ export async function placeSearch(
 ) {
   // Prefer configured Google Places for richer data; keep OSM as a
   // resilient fallback when the Google service is unavailable.
-  const key = process.env.GOOGLE_MAPS_API_KEY;
+    const key = process.env.GOOGLE_MAPS_API_KEY;
+
   if (key && key !== "your_server_side_google_maps_key") {
     try {
       const body: any = {
@@ -27,35 +28,67 @@ export async function placeSearch(
         regionCode: "IN",
         maxResultCount: 20
       };
+
       if (Number.isFinite(lat) && Number.isFinite(lng)) {
         body.locationBias = {
           circle: {
-            center: { latitude: Number(lat), longitude: Number(lng) },
+            center: {
+              latitude: Number(lat),
+              longitude: Number(lng)
+            },
             radius: 50000
           }
         };
       }
-      const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Goog-Api-Key": key,
-          "X-Goog-FieldMask": [
-            "places.id", "places.displayName", "places.formattedAddress",
-            "places.location", "places.rating", "places.currentOpeningHours",
-            "places.nationalPhoneNumber", "places.websiteUri", "places.priceLevel",
-            "places.types"
-          ].join(",")
-        },
-        body: JSON.stringify(body)
-      });
-      if (response.ok) {
-        const data: any = await response.json();
+
+      const response = await fetch(
+        "https://places.googleapis.com/v1/places:searchText",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": key,
+            "X-Goog-FieldMask": [
+              "places.id",
+              "places.displayName",
+              "places.formattedAddress",
+              "places.location",
+              "places.rating",
+              "places.currentOpeningHours",
+              "places.nationalPhoneNumber",
+              "places.websiteUri",
+              "places.priceLevel",
+              "places.types"
+            ].join(",")
+          },
+          body: JSON.stringify(body)
+        }
+      );
+
+      const responseText = await response.text();
+
+      if (!response.ok) {
+        console.error(
+          `[placeSearch] Google HTTP ${response.status}:`,
+          responseText
+        );
+      } else {
+        const data: any = responseText
+          ? JSON.parse(responseText)
+          : {};
+
         const places = (data.places || []).map((place: any) => ({
           id: place.id,
-          displayName: { text: place.displayName?.text || "Unknown place" },
+          displayName: {
+            text: place.displayName?.text || "Unknown place"
+          },
           formattedAddress: place.formattedAddress || "",
-          location: place.location ? { latitude: Number(place.location.latitude), longitude: Number(place.location.longitude) } : undefined,
+          location: place.location
+            ? {
+                latitude: Number(place.location.latitude),
+                longitude: Number(place.location.longitude)
+              }
+            : undefined,
           rating: place.rating,
           currentOpeningHours: place.currentOpeningHours,
           photos: place.photos || [],
@@ -64,10 +97,17 @@ export async function placeSearch(
           priceLevel: place.priceLevel,
           types: place.types || []
         }));
-        if (places.length) return { places };
+
+        console.log(
+          `[placeSearch] Google query="${text}" results=${places.length}`
+        );
+
+        if (places.length) {
+          return { places };
+        }
       }
-    } catch {
-      // Fall through to OSM/Nominatim.
+    } catch (error) {
+      console.error("[placeSearch] Google Places error:", error);
     }
   }
 
@@ -157,12 +197,10 @@ const result = await placeSearch(
           places: result.places.slice(0, 20)
         };
       }
-    } catch (error) {
-      console.error(
-        `[nearbySearch] Google search failed for "${query}":`,
-        error
-      );
-    }
+    }  catch (error) {
+  console.error("[placeSearch] Google Places error:", error);
+  // Fall through to OSM/Nominatim.
+}
   }
 
   return { places: [] };
