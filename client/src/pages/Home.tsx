@@ -899,17 +899,54 @@ export default function Home({ view = "home" }: { view?: "home" | "destination" 
   // --------------------------------------------------
 
   function endpointReferences() {
-    const refs: { key: "source" | "destination"; label: string; place?: Place }[] = [];
-    if (source?.location) refs.push({ key: "source", label: source.displayName?.text || "Source", place: source });
-    if (dest?.location) refs.push({ key: "destination", label: dest.displayName?.text || "Destination", place: dest });
-    return refs;
+  const refs: {
+    key: "source" | "destination";
+    label: string;
+    place?: Place;
+  }[] = [];
+
+  // Always prefer the actual GPS location as the source
+  if (loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng)) {
+    refs.push({
+      key: "source",
+      label: "Current Location",
+      place: {
+        id: "current-location",
+        displayName: { text: "Current Location" },
+        formattedAddress: "Current GPS location",
+        location: {
+          latitude: loc.lat,
+          longitude: loc.lng
+        }
+      } as Place
+    });
+  } else if (source?.location) {
+    refs.push({
+      key: "source",
+      label: source.displayName?.text || "Source",
+      place: source
+    });
   }
+
+  // Always include destination separately
+  if (dest?.location) {
+    refs.push({
+      key: "destination",
+      label: dest.displayName?.text || "Destination",
+      place: dest
+    });
+  }
+
+  return refs;
+}
 
   async function searchNearbyAtReference(type: string, ref: { key: "source" | "destination"; label: string; place?: Place }) {
     const lat = Number(ref.place?.location?.latitude);
     const lng = Number(ref.place?.location?.longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return [];
-    const r = await api.get(type === "hotel" ? "/places/hotels" : "/places/nearby", { params: { type, lat, lng } });
+    const r = await api.get("/places/nearby", {
+  params: { type, lat, lng }
+});
     return (r.data.places || []).map((p: Place) => ({
       ...p,
       _reference: ref.key,
