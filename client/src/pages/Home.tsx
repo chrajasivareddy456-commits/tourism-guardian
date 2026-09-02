@@ -919,36 +919,104 @@ export default function Home({ view = "home" }: { view?: "home" | "destination" 
   }
 
   async function nearbySearch(type: string) {
-    const refs = endpointReferences();
-    if (!refs.length) {
-      setMessage("Select a source and destination first.");
-      return;
-    }
+  const currentLat = Number(loc?.lat);
+  const currentLng = Number(loc?.lng);
 
-    try {
-      const batches = await Promise.allSettled(refs.map((ref) => searchNearbyAtReference(type, ref)));
-      const merged = batches.flatMap((r) => r.status === "fulfilled" ? r.value : []);
-      const unique = new Map<string, Place>();
-      for (const p of merged) {
-        const name = String(p.displayName?.text || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ");
-        const coord = p.location ? `${Number(p.location.latitude).toFixed(5)},${Number(p.location.longitude).toFixed(5)}` : "";
-        const key = `${name}|${coord}`;
-        if (!unique.has(key)) unique.set(key, p);
-      }
-      const places = Array.from(unique.values()).sort((a: any, b: any) => (a._distanceKm ?? Infinity) - (b._distanceKm ?? Infinity));
+  try {
+    // PRIMARY: search around the user's real current GPS location
+    if (Number.isFinite(currentLat) && Number.isFinite(currentLng)) {
+      const r = await api.get("/places/nearby", {
+        params: {
+          type,
+          lat: currentLat,
+          lng: currentLng
+        }
+      });
+
+      const places = (r.data.places || []).map((p: Place) => ({
+        ...p,
+        _reference: "current",
+        _referenceLabel: "Current location"
+      }));
+
       setNearby(places);
       setNearbyType(type);
       setShowNearbyModal(true);
       setExpandedPlaceId(null);
-      localStorage.setItem(`tg_nearby_${type}_endpoints`, JSON.stringify(places));
-      if (!places.length) setMessage(`No ${type} found near the selected source or destination.`);
-    } catch {
-      const cached = JSON.parse(localStorage.getItem(`tg_nearby_${type}_endpoints`) || "null");
-      if (cached) {
-        setNearby(cached); setNearbyType(type); setShowNearbyModal(true); setMessage("Offline mode: showing saved source/destination results.");
-      } else setMessage(`Live ${type} data unavailable.`);
+
+      localStorage.setItem(
+        `tg_nearby_${type}_current`,
+        JSON.stringify(places)
+      );
+
+      if (!places.length) {
+        setMessage(`No ${type} found near your current location.`);
+      }
+
+      return;
+    }
+
+    // FALLBACK: source/destination if GPS is unavailable
+    const refs = endpointReferences();
+
+    if (!refs.length) {
+      setMessage("Allow location access to find nearby places.");
+      return;
+    }
+
+    const batches = await Promise.allSettled(
+      refs.map((ref) => searchNearbyAtReference(type, ref))
+    );
+
+    const merged = batches.flatMap((r) =>
+      r.status === "fulfilled" ? r.value : []
+    );
+
+    const unique = new Map<string, Place>();
+
+    for (const p of merged) {
+      const name = String(p.displayName?.text || "").trim().toLowerCase();
+      const coord = p.location
+        ? `${p.location.latitude},${p.location.longitude}`
+        : "";
+
+      const key = `${name}|${coord}`;
+
+      if (!unique.has(key)) {
+        unique.set(key, p);
+      }
+    }
+
+    const places = Array.from(unique.values());
+
+    setNearby(places);
+    setNearbyType(type);
+    setShowNearbyModal(true);
+    setExpandedPlaceId(null);
+
+    if (!places.length) {
+      setMessage(`No ${type} found nearby.`);
+    }
+  } catch (e: any) {
+    console.error("Nearby search failed:", e);
+
+    const cached = JSON.parse(
+      localStorage.getItem(`tg_nearby_${type}_current`) || "null"
+    );
+
+    if (cached?.length) {
+      setNearby(cached);
+      setNearbyType(type);
+      setShowNearbyModal(true);
+      setMessage("Offline mode: showing your last nearby results.");
+    } else {
+      setNearby([]);
+      setNearbyType(type);
+      setShowNearbyModal(true);
+      setMessage(`Unable to load nearby ${type}.`);
     }
   }
+}
 
   // --------------------------------------------------
   // APPROX PER-DAY HOTEL PRICE FROM GOOGLE'S priceLevel
