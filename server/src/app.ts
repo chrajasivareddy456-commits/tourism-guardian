@@ -14,7 +14,13 @@ import plannerRoutes from "./routes/planner.js";
 export function createApp() {
   const app = express();
   app.use(helmet());
-  app.use(cors({ origin: env.CLIENT_URL }));
+  app.use(cors({
+  origin: [
+    "https://tourism-guardian.vercel.app",
+    "https://tourism-guardian-814m2r4ds-dynadebugers.vercel.app"
+  ],
+  credentials: true
+}));
   app.use(express.json({ limit: "1mb" }));
   app.use(rateLimit({ windowMs: 60_000, limit: 120 }));
 
