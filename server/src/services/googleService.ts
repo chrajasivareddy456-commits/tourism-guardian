@@ -128,21 +128,29 @@ export async function nearbySearch(
       "bus terminal"
     ],
     tourist: [
-      "tourist attraction",
-      "tourist places",
-      "attractions"
-    ]
+  "tourist attraction",
+  "tourist attractions",
+  "places to visit",
+  "popular tourist places",
+  "points of interest",
+  "sightseeing"
+]
   };
 
   const searchQueries = queries[text] || [text];
 
   for (const query of searchQueries) {
     try {
-      const result = await placeSearch(
-        `${query} near ${lat},${lng}`,
-        lat,
-        lng
-      );
+      const searchText =
+  text === "tourist"
+    ? `${query}`
+    : `${query} near ${lat},${lng}`;
+
+const result = await placeSearch(
+  searchText,
+  lat,
+  lng
+);
 
       if (result?.places?.length) {
         return {
