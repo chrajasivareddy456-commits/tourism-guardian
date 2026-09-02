@@ -105,72 +105,111 @@ export async function nearbySearch(
   lat: number,
   lng: number
 ) {
-  const queries: Record<string, string[]> = {
-    police: [
-      "police",
-      "police station",
-      "police department"
-    ],
-    hospital: [
-      "hospital",
-      "medical hospital"
-    ],
-    hotel: [
-      "hotel",
-      "hotels"
-    ],
-    train_station: [
-      "railway station",
-      "train station"
-    ],
-    bus_station: [
-      "bus station",
-      "bus terminal"
-    ],
-    tourist: [
-      "tourist attraction",
-      "tourist places",
-      "attractions"
-    ]
+  const typeMap: Record<string, string> = {
+    police: "police",
+    hospital: "hospital",
+    hotel: "hotel",
+    train_station: "railway_station",
+    bus_station: "bus_station",
+    tourist: "tourism"
   };
 
-  const searchQueries = queries[text] || [text];
+  const osmType = typeMap[text] || text;
 
-  const allPlaces: any[] = [];
-  const seen = new Set<string>();
+  const query = `
+    [out:json][timeout:20];
+    (
+      node["amenity"="${osmType}"](around:10000,${lat},${lng});
+      way["amenity"="${osmType}"](around:10000,${lat},${lng});
+      relation["amenity"="${osmType}"](around:10000,${lat},${lng});
+      node["tourism"="${osmType}"](around:10000,${lat},${lng});
+      way["tourism"="${osmType}"](around:10000,${lat},${lng});
+    );
+    out center tags;
+  `;
 
-  for (const query of searchQueries) {
-    try {
-      const result = await placeSearch(
-        `${query} near ${lat},${lng}`,
-        lat,
-        lng
-      );
-
-      for (const place of result?.places || []) {
-        const id =
-          place.id ||
-          `${place.location?.latitude}-${place.location?.longitude}-${place.displayName?.text}`;
-
-        if (!seen.has(id)) {
-          seen.add(id);
-          allPlaces.push(place);
-        }
+  try {
+    const response = await fetch(
+      "https://overpass-api.de/api/interpreter",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "TourismGuardian/1.0"
+        },
+        body: new URLSearchParams({ data: query }).toString()
       }
+    );
 
-      // Once we have enough results, stop making requests.
-      if (allPlaces.length >= 20) break;
-    } catch (error) {
-      console.error(
-        `[nearbySearch] "${query}" failed:`,
-        error
-      );
+    if (response.ok) {
+      const data: any = await response.json();
+
+      const places = (data.elements || [])
+        .map((item: any) => {
+          const latitude =
+            item.lat ?? item.center?.lat;
+
+          const longitude =
+            item.lon ?? item.center?.lon;
+
+          if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+            return null;
+          }
+
+          const tags = item.tags || {};
+
+          return {
+            id: `osm-${item.type}-${item.id}`,
+            displayName: {
+              text:
+                tags.name ||
+                tags["name:en"] ||
+                text.charAt(0).toUpperCase() + text.slice(1)
+            },
+            formattedAddress:
+              [
+                tags["addr:housenumber"],
+                tags["addr:street"],
+                tags["addr:city"]
+              ]
+                .filter(Boolean)
+                .join(", "),
+            location: {
+              latitude: Number(latitude),
+              longitude: Number(longitude)
+            },
+            rating: undefined,
+            currentOpeningHours: undefined,
+            photos: [],
+            nationalPhoneNumber:
+              tags.phone || tags["contact:phone"],
+            websiteUri:
+              tags.website || tags["contact:website"],
+            priceLevel: undefined,
+            types: [
+              tags.amenity,
+              tags.tourism
+            ].filter(Boolean)
+          };
+        })
+        .filter(Boolean);
+
+      if (places.length > 0) {
+        return {
+          places: places.slice(0, 20)
+        };
+      }
     }
+  } catch (error) {
+    console.error("[nearbySearch] Overpass error:", error);
   }
 
-  return {
-    places: allPlaces.slice(0, 20)
-  };
+  // Final fallback to the existing search system.
+  return placeSearch(
+    `${text} near ${lat},${lng}`,
+    lat,
+    lng
+  );
 }
 
 // ============================================================
